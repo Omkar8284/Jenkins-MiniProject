@@ -10,7 +10,6 @@ pipeline {
     }
 
     stages {
-
         stage('Checkout') {
             steps { checkout scm }
         }
@@ -18,7 +17,7 @@ pipeline {
         stage('Validate') {
             steps {
                 sh '''
-                  [ -f index.html ] || { echo "❌ index.html missing" && exit 1; }
+                  [ -f index.html ] || { echo "❌ index.html missing"; exit 1; }
                 '''
             }
         }
@@ -28,13 +27,16 @@ pipeline {
                 sh '''
                   rm -rf build
                   TIMESTAMP=$(date +%Y%m%d%H%M%S)
+
+                  # Create directory for this version
                   mkdir -p build/$TIMESTAMP
 
-                  # Copy only the website files
+                  # Copy all website content into version folder
                   cp -r css fonts images js index.html build/$TIMESTAMP/
 
-                  cd build
-                  tar -czf site-$TIMESTAMP.tgz $TIMESTAMP
+                  cd build/$TIMESTAMP
+                  tar -czf ../site-$TIMESTAMP.tgz .
+                  cd ..
                   echo $TIMESTAMP > release_id
                 '''
             }
@@ -47,7 +49,7 @@ pipeline {
                       RELEASE_ID=$(cat build/release_id)
 
                       for node in ${NODES}; do
-                        echo "🚚 Deploying to $node ..."
+                        echo "🚚 Deploying to $node..."
 
                         scp -o StrictHostKeyChecking=no build/site-$RELEASE_ID.tgz ${DEPLOY_USER}@$node:${RELEASE_DIR}/
 
@@ -67,15 +69,17 @@ pipeline {
         stage('Healthcheck') {
             steps {
                 sh '''
-                  curl -sSf http://${NODES}:8080/ \
-                  || { echo "❌ Health check failed!" && exit 1; }
+                  curl -sSf http://${NODES}:8080/ || {
+                    echo "❌ Health check failed!"
+                    exit 1
+                  }
                 '''
             }
         }
     }
 
     post {
-        success { echo "🎉 Deployment Successful!" }
-        failure { echo "❌ Deployment Failed — Check Console Logs!" }
+        success { echo "🎯 Deployment Successful!" }
+        failure { echo "🔥 Deployment Failed — Check Logs!" }
     }
 }
