@@ -10,13 +10,16 @@ pipeline {
     }
 
     stages {
+
         stage('Checkout') {
             steps { checkout scm }
         }
 
         stage('Validate') {
             steps {
-                sh 'test -f index.html || (echo "index.html missing" && exit 1)'
+                sh '''
+                  [ -f index.html ] || { echo "❌ index.html missing" && exit 1; }
+                '''
             }
         }
 
@@ -25,11 +28,14 @@ pipeline {
                 sh '''
                   rm -rf build
                   TIMESTAMP=$(date +%Y%m%d%H%M%S)
-                  mkdir -p build
-                  cp -r * build/
+                  mkdir -p build/$TIMESTAMP
+
+                  # Copy only the website files
+                  cp -r css fonts images js index.html build/$TIMESTAMP/
+
                   cd build
-                  tar -czf site-$TIMESTAMP.tgz *
-                  echo $TIMESTAMP > ../build/release_id
+                  tar -czf site-$TIMESTAMP.tgz $TIMESTAMP
+                  echo $TIMESTAMP > release_id
                 '''
             }
         }
@@ -39,9 +45,12 @@ pipeline {
                 sshagent([SSH_KEY]) {
                     sh '''
                       RELEASE_ID=$(cat build/release_id)
+
                       for node in ${NODES}; do
-                        echo "Deploying to $node ..."
+                        echo "🚚 Deploying to $node ..."
+
                         scp -o StrictHostKeyChecking=no build/site-$RELEASE_ID.tgz ${DEPLOY_USER}@$node:${RELEASE_DIR}/
+
                         ssh -o StrictHostKeyChecking=no ${DEPLOY_USER}@$node "
                           mkdir -p ${RELEASE_DIR}/$RELEASE_ID &&
                           tar -xzf ${RELEASE_DIR}/site-$RELEASE_ID.tgz -C ${RELEASE_DIR}/$RELEASE_ID &&
@@ -57,13 +66,16 @@ pipeline {
 
         stage('Healthcheck') {
             steps {
-                sh 'curl -sSf http://${NODES}:8080/ || exit 1'
+                sh '''
+                  curl -sSf http://${NODES}:8080/ \
+                  || { echo "❌ Health check failed!" && exit 1; }
+                '''
             }
         }
     }
 
     post {
-        success { echo "🚀 Deployment Successful!" }
-        failure { echo "❌ Deployment Failed — Check Logs" }
+        success { echo "🎉 Deployment Successful!" }
+        failure { echo "❌ Deployment Failed — Check Console Logs!" }
     }
 }
